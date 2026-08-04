@@ -43,6 +43,28 @@ M.defaults = {
   -- API pool. Optional, but it makes searches faster.
   mailto = nil,
 
+  -- Directories searched for a paper's PDF, relative to the bibliography.
+  -- Absolute paths and ~ are also accepted.
+  pdf_dirs = { ".", "papers", "pdfs", "articles", "attachments" },
+
+  -- How to open a PDF. nil picks `open` on macOS, `xdg-open` elsewhere.
+  -- Set to a function(path) to handle it yourself.
+  open_cmd = nil,
+
+  -- Record the path in a `file` field when a citation is captured from a
+  -- local PDF, so it can be reopened later.
+  record_file_field = true,
+
+  -- When no local PDF exists, look for a legal open-access copy via
+  -- OpenAlex, then fall back to opening the DOI in a browser.
+  online_fallback = true,
+
+  -- Download an open-access PDF into `download_dir` instead of opening it in
+  -- a browser, and record it so the next open is local. Set false to just
+  -- open the url.
+  download_oa = true,
+  download_dir = "papers",
+
   -- Set to false to define your own mappings.
   default_keymaps = true,
   keymap_prefix = "<leader>c",

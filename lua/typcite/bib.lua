@@ -269,14 +269,18 @@ end
 --- Returns key, was_new. Existing DOIs are not duplicated.
 ---@param path string
 ---@param bibtex string
+---@param extra table|nil fields merged in after the publisher's are stripped
 ---@return string|nil key
 ---@return boolean is_new
-function M.add(path, bibtex)
+function M.add(path, bibtex, extra)
   local parsed = M.parse(bibtex)
   if #parsed == 0 then return nil, false end
 
   local incoming = parsed[1]
   local fields = strip_dropped(incoming.fields)
+  for k, v in pairs(extra or {}) do
+    if v and v ~= "" then fields[k] = v end
+  end
 
   local existing = M.load(path)
   local taken = {}
@@ -303,6 +307,111 @@ function M.add(path, bibtex)
   vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
   vim.fn.writefile(out, path)
   return key, true
+end
+
+--- Set or replace one field on an existing entry, in place.
+---@param path string
+---@param key string  citation key
+---@param name string  field name
+---@param value string
+---@return boolean ok
+function M.set_field(path, key, name, value)
+  if not vim.uv.fs_stat(path) then return false end
+  local lines = vim.fn.readfile(path)
+
+  local start
+  for i, line in ipairs(lines) do
+    local found = line:match("^%s*@%a+%s*{%s*([^,%s]+)%s*,")
+    if found == key then start = i break end
+  end
+  if not start then return false end
+
+  -- find this entry's closing brace
+  local depth, stop = 0, nil
+  for i = start, #lines do
+    local _, opens = lines[i]:gsub("{", "")
+    local _, closes = lines[i]:gsub("}", "")
+    depth = depth + opens - closes
+    if depth <= 0 then stop = i break end
+  end
+  stop = stop or #lines
+
+  local rendered = ("  %s = {%s},"):format(name, value)
+
+  for i = start + 1, stop do
+    if lines[i]:match("^%s*" .. name .. "%s*=") then
+      lines[i] = rendered
+      vim.fn.writefile(lines, path)
+      return true
+    end
+  end
+
+  table.insert(lines, start + 1, rendered)
+  vim.fn.writefile(lines, path)
+  return true
+end
+
+-- --------------------------------------------------------------- pdf files
+
+--- Store a path relative to the bibliography when it sits underneath it, so
+--- the entry survives the project being moved or synced to another machine.
+---@param file string absolute path to the pdf
+---@param bib_path string absolute path to the bibliography
+---@return string
+function M.relativise(file, bib_path)
+  local root = vim.fn.fnamemodify(bib_path, ":h")
+  if root:sub(-1) ~= "/" then root = root .. "/" end
+  if file:sub(1, #root) == root then return file:sub(#root + 1) end
+  return file
+end
+
+--- Find the PDF belonging to an entry.
+--- Checks the `file` field first, then <key>.pdf inside `pdf_dirs`, then any
+--- pdf in those directories whose filename contains the key.
+---@param entry table a parsed entry, or { key = "...", fields = {...} }
+---@param bib_path string
+---@return string|nil absolute path
+function M.pdf_for(entry, bib_path)
+  local root = vim.fn.fnamemodify(bib_path, ":h")
+
+  local recorded = entry.fields and entry.fields.file
+  if recorded and recorded ~= "" then
+    -- JabRef writes `:/abs/path.pdf:PDF`; take the middle segment when present
+    local cleaned = recorded:match("^[^:]*:([^:]+):[^:]*$") or recorded
+    if cleaned:sub(1, 1) == "~" then
+      cleaned = vim.fn.expand("~") .. cleaned:sub(2)
+    end
+    local abs = cleaned:sub(1, 1) == "/" and cleaned or (root .. "/" .. cleaned)
+    if vim.uv.fs_stat(abs) then return abs end
+  end
+
+  for _, dir in ipairs(config.get().pdf_dirs) do
+    local base
+    if dir:sub(1, 1) == "/" then
+      base = dir
+    elseif dir:sub(1, 1) == "~" then
+      base = vim.fn.expand(dir)
+    else
+      base = root .. "/" .. dir
+    end
+
+    local exact = base .. "/" .. entry.key .. ".pdf"
+    if vim.uv.fs_stat(exact) then return exact end
+
+    local handle = vim.uv.fs_scandir(base)
+    if handle then
+      while true do
+        local name, kind = vim.uv.fs_scandir_next(handle)
+        if not name then break end
+        if kind == "file" and name:lower():match("%.pdf$")
+          and name:lower():find(entry.key:lower(), 1, true) then
+          return base .. "/" .. name
+        end
+      end
+    end
+  end
+
+  return nil
 end
 
 return M

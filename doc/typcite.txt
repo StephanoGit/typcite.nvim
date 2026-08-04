@@ -1,6 +1,6 @@
 *typcite.txt*  Capture a citation from anything, in one keystroke
 
-Author:  stephanogit
+Author:  Radu
 License: MIT
 
 ==============================================================================
@@ -14,6 +14,7 @@ CONTENTS                                                     *typcite-contents*
   6. Mappings ............................. |typcite-mappings|
   7. Configuration ........................ |typcite-configuration|
   8. Bibliography resolution .............. |typcite-bibliography|
+     Finding a paper's PDF .............. |typcite-pdf|
   9. Citation keys ........................ |typcite-keys|
  10. Lua API .............................. |typcite-api|
  11. Troubleshooting ...................... |typcite-troubleshooting|
@@ -100,6 +101,10 @@ citation is inserted at the cursor.
 :Typcite bib            Open the active bibliography in a vertical split, or
                         close it if it is already showing.
 
+:Typcite pdf            Open the PDF for the citation under the cursor. With
+                        no citation under the cursor, offers every entry that
+                        has a PDF on disk.
+
 ==============================================================================
 6. MAPPINGS                                                  *typcite-mappings*
 
@@ -110,6 +115,7 @@ configurable with `keymap_prefix`.
     <leader>cd      Capture from the system clipboard.
     <leader>cc      Pick from the bibliography. No network.
     <leader>cb      Toggle the bibliography split.
+    <leader>co      Open the PDF for the citation under the cursor.
 
 To define your own: >lua
 
@@ -187,6 +193,35 @@ pdf2doi_cmd ~
     PATH, which differs from your shell's PATH when Neovim is launched from
     a GUI.
 
+                                                      *typcite-config-pdf_dirs*
+pdf_dirs ~
+    Directories searched for a paper's PDF, relative to the bibliography.
+    Absolute paths and ~ are accepted. See |typcite-pdf|.
+
+                                                      *typcite-config-open_cmd*
+open_cmd ~
+    Command used to open a PDF. nil picks `open` on macOS and `xdg-open`
+    elsewhere. May be a function(path).
+
+                                             *typcite-config-record_file_field*
+record_file_field ~
+    Write a `file` field when a citation is captured from a local PDF, so it
+    can be reopened later. Set false to keep entries free of local paths.
+
+                                               *typcite-config-online_fallback*
+online_fallback ~
+    Look for an open-access copy, then the publisher page, when no local pdf
+    exists. Set false to only ever look on disk.
+
+                                                    *typcite-config-download_oa*
+download_oa ~
+    Save an open-access pdf into `download_dir` and record it, rather than
+    opening the url. Set false to just open it in a browser.
+
+                                                   *typcite-config-download_dir*
+download_dir ~
+    Where downloads land, relative to the bibliography. Default "papers".
+
                                                         *typcite-config-mailto*
 mailto ~
     A contact address sent to Crossref. Optional, but it routes requests to
@@ -205,6 +240,55 @@ per-project setup. `:checkhealth typcite` reports which file resolved.
 Duplicates are detected by DOI, not by key. Adding a paper already present
 returns the existing key and writes nothing.
 
+------------------------------------------------------------------------------
+FINDING A PAPER'S PDF                                             *typcite-pdf*
+
+|<leader>co| opens the PDF belonging to the citation under the cursor. The
+key is read from any supported syntax: `@key`, `[@key]`, `\cite{key}`,
+`\parencite{key,other}` and `[cite:@key]`.
+
+The file is located in two ways, in order:
+
+1. The entry's `file` field. typcite writes this itself when a citation is
+   captured from a local PDF, storing the path relative to the bibliography
+   so the project stays portable. JabRef and Zotero style `:path:PDF` values
+   are also understood.
+
+2. A search through `pdf_dirs`, relative to the bibliography. First an exact
+   `<key>.pdf`, then any pdf whose filename contains the key.
+
+So a layout like this works with no configuration: >
+
+    fNIRS_Results/
+      refs.bib
+      main.typ
+      papers/
+        flor1995phantom.pdf
+<
+When nothing is found on disk~
+
+With `online_fallback` enabled, typcite asks OpenAlex whether a legal
+open-access copy exists. OpenAlex indexes publisher OA, institutional
+repository deposits and preprints. arXiv entries skip the lookup and go
+straight to the pdf.
+
+If an open-access pdf exists and `download_oa` is true, it is downloaded into
+`download_dir`, recorded in the entry's `file` field, and opened. The next
+open is local and instant.
+
+If no open-access copy exists, the publisher's page is opened in a browser,
+where your institutional access applies.
+
+A download that returns HTML rather than a pdf, which is what a paywall
+usually does, is discarded and the url opened in the browser instead.
+
+Set `open_cmd` to a function to handle opening yourself, for instance to
+open the file in a Neovim buffer rather than an external viewer: >lua
+
+    open_cmd = function(path)
+      vim.cmd("edit " .. vim.fn.fnameescape(path))
+    end
+<
 ==============================================================================
 9. CITATION KEYS                                                 *typcite-keys*
 

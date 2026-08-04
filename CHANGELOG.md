@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+- `<leader>co` opens the PDF for the citation under the cursor
+- Falls back to an open-access copy via OpenAlex, downloading and recording it
+- Falls back again to the publisher page when no open-access copy exists
+
 ## [0.1.0]
 
 Initial release.

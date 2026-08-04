@@ -164,4 +164,77 @@ function M.pdf(path, cb)
   cb(found, nil)
 end
 
+-- ------------------------------------------------------- open access lookup
+
+--- Ask OpenAlex whether a legal open-access copy exists.
+--- OpenAlex indexes publisher OA, repository deposits and preprints. It is
+--- free and needs no key, though `mailto` gets you the faster pool.
+---@param doi string
+---@param cb fun(info: table|nil, err: string|nil)  { pdf_url, landing_url, is_oa }
+function M.open_access(doi, cb)
+  -- arXiv resolves faster and more reliably straight from the id
+  local arx = doi:match("^10%.48550/arXiv%.(.+)$")
+  if arx then
+    return cb({
+      pdf_url = "https://arxiv.org/pdf/" .. arx,
+      landing_url = "https://arxiv.org/abs/" .. arx,
+      is_oa = true,
+    }, nil)
+  end
+
+  local url = "https://api.openalex.org/works/doi:" .. encode(doi)
+  local mailto = config.get().mailto
+  if mailto then url = url .. "?mailto=" .. encode(mailto) end
+
+  http.get(url, nil, function(body, err)
+    if not body then return cb(nil, err) end
+
+    local ok, data = pcall(vim.json.decode, body)
+    if not ok or type(data) ~= "table" then
+      return cb(nil, "bad response from openalex")
+    end
+
+    local best = data.best_oa_location or data.primary_location
+    if not best then return cb({ is_oa = false }, nil) end
+
+    cb({
+      pdf_url = best.pdf_url,
+      landing_url = best.landing_page_url,
+      is_oa = data.is_oa == true or best.is_oa == true,
+    }, nil)
+  end)
+end
+
+--- Download a url to a path. Creates parent directories.
+---@param url string
+---@param dest string
+---@param cb fun(ok: boolean, err: string|nil)
+function M.download(url, dest, cb)
+  vim.fn.mkdir(vim.fn.fnamemodify(dest, ":h"), "p")
+
+  vim.system({
+    "curl", "-sSL", "--fail",
+    "--max-time", tostring(config.get().timeout * 3),
+    "-o", dest, url,
+  }, { text = true }, function(res)
+    vim.schedule(function()
+      if res.code ~= 0 then
+        pcall(vim.fn.delete, dest)
+        return cb(false, "download failed: " .. vim.trim(res.stderr or ""))
+      end
+
+      -- a paywall often returns an HTML page with a 200
+      local fd = io.open(dest, "rb")
+      local head = fd and fd:read(5) or ""
+      if fd then fd:close() end
+      if head ~= "%PDF-" then
+        pcall(vim.fn.delete, dest)
+        return cb(false, "that url did not return a PDF")
+      end
+
+      cb(true, nil)
+    end)
+  end)
+end
+
 return M

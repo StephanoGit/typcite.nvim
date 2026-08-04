@@ -16,6 +16,8 @@ vim.api.nvim_create_user_command("Typcite", function(opts)
     typcite.toggle_bib()
   elseif sub == "clipboard" then
     typcite.from_clipboard()
+  elseif sub == "pdf" then
+    typcite.open_pdf()
   else
     typcite.capture(opts.args)
   end
@@ -23,7 +25,7 @@ end, {
   nargs = "*",
   complete = function(lead)
     return vim.tbl_filter(function(c) return c:find(lead, 1, true) == 1 end,
-      { "add", "pick", "bib", "clipboard" })
+      { "add", "pick", "bib", "clipboard", "pdf" })
   end,
   desc = "Capture a citation",
 })
