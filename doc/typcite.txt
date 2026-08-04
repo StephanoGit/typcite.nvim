@@ -1,0 +1,289 @@
+*typcite.txt*  Capture a citation from anything, in one keystroke
+
+Author:  Radu
+License: MIT
+
+==============================================================================
+CONTENTS                                                     *typcite-contents*
+
+  1. Introduction ......................... |typcite-introduction|
+  2. Requirements ......................... |typcite-requirements|
+  3. Installation ......................... |typcite-installation|
+  4. Usage ................................ |typcite-usage|
+  5. Commands ............................. |typcite-commands|
+  6. Mappings ............................. |typcite-mappings|
+  7. Configuration ........................ |typcite-configuration|
+  8. Bibliography resolution .............. |typcite-bibliography|
+  9. Citation keys ........................ |typcite-keys|
+ 10. Lua API .............................. |typcite-api|
+ 11. Troubleshooting ...................... |typcite-troubleshooting|
+ 12. Comparison ........................... |typcite-comparison|
+
+==============================================================================
+1. INTRODUCTION                                          *typcite-introduction*
+
+typcite closes one gap: getting a reference you do not yet have into the
+document you are writing, without leaving Neovim.
+
+Give it a DOI, an arXiv id, an ISBN, a path to a PDF, or a title you half
+remember. It works out which of those you meant, fetches the record, adds it
+to the bibliography belonging to the project you are in, and writes the
+citation into your buffer using the syntax your filetype expects.
+
+Built for Typst. Works with LaTeX, Pandoc markdown, Quarto and Org.
+
+Everything network-bound runs asynchronously, so a slow publisher never
+blocks the editor.
+
+==============================================================================
+2. REQUIREMENTS                                          *typcite-requirements*
+
+Required~
+  - Neovim 0.10 or newer (|vim.system()|, |vim.json|, |vim.uv|)
+  - curl
+
+Recommended~
+  - telescope-ui-select or similar, so |vim.ui.select()| gets fuzzy search.
+    Without it the pickers fall back to a numbered list.
+  - pdf2doi, for PDFs whose identifier is inside a compressed stream.
+    `pipx install pdf2doi`
+
+Run |:checkhealth| typcite to see what is present.
+
+==============================================================================
+3. INSTALLATION                                          *typcite-installation*
+
+With lazy.nvim: >lua
+
+    {
+      "yourname/typcite.nvim",
+      ft = { "typst", "tex", "markdown", "quarto" },
+      opts = {},
+    }
+<
+`opts` may be omitted, but `setup()` must run for the default mappings to be
+created. See |typcite-configuration|.
+
+==============================================================================
+4. USAGE                                                        *typcite-usage*
+
+The main action prompts you for something to cite and decides what it is:
+
+    Input                                   Route ~
+    10.1038/375482a0                        doi.org content negotiation
+    https://doi.org/10.1038/375482a0        same
+    arXiv:2401.12345                        arXiv's registered DOI
+    https://arxiv.org/abs/2401.12345        same
+    978-0-13-235088-4                       OpenLibrary
+    papers/brain.pdf                        identifier extracted from the file
+    rubber hand illusion demand             Crossref bibliographic search
+
+For the last two, a picker appears if there is more than one candidate.
+
+In every case the entry is appended to the resolved bibliography and the
+citation is inserted at the cursor.
+
+==============================================================================
+5. COMMANDS                                                  *typcite-commands*
+
+                                                                     *:Typcite*
+:Typcite                Prompt for something to cite.
+
+:Typcite add {thing}    Cite {thing} without prompting. {thing} may be any of
+                        the inputs listed in |typcite-usage|.
+
+:Typcite pick           Pick from entries already in the bibliography. No
+                        network access.
+
+:Typcite clipboard      Cite whatever is on the system clipboard.
+
+:Typcite bib            Open the active bibliography in a vertical split, or
+                        close it if it is already showing.
+
+==============================================================================
+6. MAPPINGS                                                  *typcite-mappings*
+
+Created by `setup()` unless `default_keymaps` is false. The prefix is
+configurable with `keymap_prefix`.
+
+    <leader>ca      Capture. Prompts, then detects the input type.
+    <leader>cd      Capture from the system clipboard.
+    <leader>cc      Pick from the bibliography. No network.
+    <leader>cb      Toggle the bibliography split.
+
+To define your own: >lua
+
+    require("typcite").setup({ default_keymaps = false })
+
+    vim.keymap.set("n", "<leader>bc", function()
+      require("typcite").capture()
+    end, { desc = "Cite" })
+<
+==============================================================================
+7. CONFIGURATION                                        *typcite-configuration*
+
+Defaults: >lua
+
+    require("typcite").setup({
+      bib_names = { "refs.bib", "references.bib", "bibliography.bib" },
+      global_bib = nil,
+      root_markers = { ".git", "typst.toml", ".typcite" },
+
+      cite_format = {
+        typst     = "@%s",
+        tex       = "\\cite{%s}",
+        plaintex  = "\\cite{%s}",
+        markdown  = "[@%s]",
+        quarto    = "[@%s]",
+        rmd       = "[@%s]",
+        org       = "[cite:@%s]",
+        default   = "@%s",
+      },
+
+      drop_fields = { "abstract", "file", "keywords", "annote", "note", "month" },
+      key_format = nil,
+
+      use_pdf2doi = true,
+      pdf2doi_cmd = "pdf2doi",
+
+      timeout = 20,
+      mailto = nil,
+
+      default_keymaps = true,
+      keymap_prefix = "<leader>c",
+    })
+<
+                                                     *typcite-config-bib_names*
+bib_names ~
+    Filenames to look for, in order, when walking up from the current buffer.
+
+                                                    *typcite-config-global_bib*
+global_bib ~
+    Used when no project bibliography is found. nil disables the fallback.
+
+                                                  *typcite-config-root_markers*
+root_markers ~
+    Stop walking up at a directory containing any of these. Prevents a stray
+    refs.bib in $HOME being adopted by a project that has none.
+
+                                                   *typcite-config-cite_format*
+cite_format ~
+    Keyed by 'filetype'. The value is a format string receiving the citation
+    key. `default` is used for any filetype not listed.
+
+                                                   *typcite-config-drop_fields*
+drop_fields ~
+    Fields removed from fetched records before writing. Publisher BibTeX
+    often carries a full abstract, which bloats the file for no benefit.
+
+                                                    *typcite-config-key_format*
+key_format ~
+    A function(fields) returning a citation key. Overrides the default
+    scheme. See |typcite-keys|.
+
+                                                   *typcite-config-pdf2doi_cmd*
+pdf2doi_cmd ~
+    Set to an absolute path when pdf2doi is installed but not on Neovim's
+    PATH, which differs from your shell's PATH when Neovim is launched from
+    a GUI.
+
+                                                        *typcite-config-mailto*
+mailto ~
+    A contact address sent to Crossref. Optional, but it routes requests to
+    their faster polite pool.
+
+==============================================================================
+8. BIBLIOGRAPHY RESOLUTION                               *typcite-bibliography*
+
+typcite walks up from the directory of the current buffer looking for any
+name in `bib_names`, stopping at any directory containing a `root_markers`
+entry. If nothing is found, `global_bib` is used when configured.
+
+The effect is that each project gets its own bibliography without any
+per-project setup. `:checkhealth typcite` reports which file resolved.
+
+Duplicates are detected by DOI, not by key. Adding a paper already present
+returns the existing key and writes nothing.
+
+==============================================================================
+9. CITATION KEYS                                                 *typcite-keys*
+
+The default scheme is the surname of the first author, the year, and the
+first meaningful word of the title: >
+
+    Flor, Herta et al. (1995), "Phantom-limb pain as a perceptual..."
+    →  flor1995phantom
+<
+Accented characters are folded to ASCII. Common stopwords are skipped when
+choosing the title word. Collisions get `b`, `c`, `d` suffixes.
+
+Override with `key_format`: >lua
+
+    key_format = function(fields)
+      return (fields.author or "anon"):lower():gsub("%W", "")
+        .. (fields.year or "nd")
+    end
+<
+==============================================================================
+10. LUA API                                                       *typcite-api*
+
+                                                          *typcite.capture()*
+require("typcite").capture({input})
+    Capture {input}, or prompt when it is nil.
+
+                                                    *typcite.pick_existing()*
+require("typcite").pick_existing()
+    Pick from the resolved bibliography.
+
+                                                    *typcite.from_clipboard()*
+require("typcite").from_clipboard()
+    Capture the system clipboard.
+
+                                                        *typcite.toggle_bib()*
+require("typcite").toggle_bib()
+    Show or hide the bibliography split.
+
+                                                     *typcite.bib.locate()*
+require("typcite.bib").locate({start})
+    Return the resolved bibliography path, or nil.
+
+==============================================================================
+11. TROUBLESHOOTING                                   *typcite-troubleshooting*
+
+The pickers are a numbered list with no search~
+    |vim.ui.select()| has no handler registered. Install telescope-ui-select,
+    dressing.nvim, or snacks.nvim's picker.
+
+pdf2doi is installed but reported missing~
+    Neovim's PATH is not your shell's. Compare `which pdf2doi` in the shell
+    with `:echo exepath('pdf2doi')` in Neovim, and set `pdf2doi_cmd` to the
+    absolute path if they differ.
+
+No identifier found in a PDF~
+    The identifier is inside a compressed stream. The built-in scanner reads
+    metadata and XMP packets only. Install pdf2doi, or read the DOI off the
+    first page and paste it instead.
+
+The wrong bibliography is being used~
+    Run |:checkhealth| typcite to see which file resolved, then add a
+    `root_markers` entry at the boundary you want.
+
+Nothing happens after the prompt~
+    Check |:messages|. Network errors are reported there.
+
+==============================================================================
+12. COMPARISON                                             *typcite-comparison*
+
+telescope-bibtex~
+    Picks from a bibliography you already have, with richer insertion
+    options. It does not fetch. The two work well together.
+
+zotcite~
+    Deep Zotero integration including annotation extraction. Requires Zotero
+    and sqlite3. typcite assumes a plain .bib file and nothing else.
+
+pdf2doi, betterbib, doi2bib~
+    Command line tools covering one capture route each. typcite calls
+    pdf2doi rather than reimplementing it.
+
+ vim:tw=78:ts=8:noet:ft=help:norl:
