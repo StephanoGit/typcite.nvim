@@ -29,7 +29,7 @@ end
 --- OpenLibrary, since Crossref does not index books by ISBN.
 function M.isbn(isbn, cb)
   local url = "https://openlibrary.org/api/books?bibkeys=ISBN:"
-    .. isbn .. "&format=json&jscmd=data"
+      .. isbn .. "&format=json&jscmd=data"
 
   http.get(url, nil, function(body, err)
     if not body then return cb(nil, err) end
@@ -42,7 +42,7 @@ function M.isbn(isbn, cb)
     for _, a in ipairs(item.authors or {}) do table.insert(authors, a.name) end
     local year = (item.publish_date or ""):match("[12]%d%d%d") or ""
     local publisher = item.publishers and item.publishers[1]
-      and item.publishers[1].name or ""
+        and item.publishers[1].name or ""
 
     cb(table.concat({
       "@book{isbn" .. isbn .. ",",
@@ -194,12 +194,17 @@ function M.open_access(doi, cb)
       return cb(nil, "bad response from openalex")
     end
 
-    local best = data.best_oa_location or data.primary_location
+    local function real(v)
+      if v == nil or v == vim.NIL or v == "" then return nil end
+      return v
+    end
+
+    local best = real(data.best_oa_location) or real(data.primary_location)
     if not best then return cb({ is_oa = false }, nil) end
 
     cb({
-      pdf_url = best.pdf_url,
-      landing_url = best.landing_page_url,
+      pdf_url = real(best.pdf_url),
+      landing_url = real(best.landing_page_url),
       is_oa = data.is_oa == true or best.is_oa == true,
     }, nil)
   end)
@@ -210,6 +215,9 @@ end
 ---@param dest string
 ---@param cb fun(ok: boolean, err: string|nil)
 function M.download(url, dest, cb)
+  if not url or url == "" or url == vim.NIL then
+    return cb(false, "no download url")
+  end
   vim.fn.mkdir(vim.fn.fnamemodify(dest, ":h"), "p")
 
   vim.system({
