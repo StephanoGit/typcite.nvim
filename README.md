@@ -39,7 +39,7 @@ than reimplementing it.
 
 ```lua
 {
-  "radu/typcite.nvim",
+  "stephanogit/typcite.nvim",
   ft = { "typst", "tex", "markdown", "quarto" },
   opts = {},
 }

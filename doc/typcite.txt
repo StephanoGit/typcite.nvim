@@ -1,6 +1,6 @@
 *typcite.txt*  Capture a citation from anything, in one keystroke
 
-Author:  Radu
+Author:  stephanogit
 License: MIT
 
 ==============================================================================
