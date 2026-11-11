@@ -243,4 +243,4 @@ nvim --headless -c "PlenaryBustedDirectory tests/ {minimal_init = 'tests/minimal
 
 ## License
 
-MIT
+Apache-2.0
